@@ -229,14 +229,15 @@ export const doIt = (script: string, typesOnly: any[]) => {
             const mref = m.reference.toLowerCase()
             return rootType ? `${m.reference}(F)` : `F.${mapping[mref] ?? mref}()`
           case "LiteralType":
-            return `F.stringLiteral("${m.literal}")()`
-
-          case "UndefinedKeyword":
-            return "F.undefined()"
+            return `F.stringLiteral("${m.literal}")`
 
           case "BooleanKeyword":
-            return "F.undefined()"
+            return "F.boolean()"
 
+          // undefined and null are problematic as they dont exist in morphic
+          // instead you have to use either F.nullable, or F.intersection([F.partial({ field: X })])
+          case "UndefinedKeyword":
+            return "F.undefined()"
           case "NullKeyword":
             return "F.null()"
 
@@ -244,11 +245,34 @@ export const doIt = (script: string, typesOnly: any[]) => {
             return "F.unknown()"
 
           case "UnionType":
+            if (
+              m.types.find(
+                (x) => x.type === "UndefinedKeyword" || x.type === "NullKeyword"
+              )
+            ) {
+              const filtered = m.types.filter(
+                (x) => x.type !== "UndefinedKeyword" && x.type !== "NullKeyword"
+              )
+              if (filtered.length > 1) {
+                return `F.nullable(${makeType({ ...m, types: filtered })})`
+              } else {
+                return `F.nullable(${makeType(filtered[0])})`
+              }
+            }
+
+            const filtered = m.types.filter((x) => x.type === "LiteralType")
+            if (filtered.length === m.types.length) {
+              return `F.keysOf({ ${m.types
+                .map((x) => `${x.literal}: null`)
+                .join(", ")} })`
+            }
+
             if (!names[name]) {
               names[name] = 0
             }
             const nam = names[name] ? names[name] : ""
             names[name]++
+
             return `F.union([${m.types.map((x) => makeType(x))}], "${name}${nam}")`
 
           case "IntersectionType":
@@ -317,10 +341,10 @@ export const ${x.name} = MO.AsOpaque<${x.name}Raw, ${x.name}>()(${x.name}_)
           case "LiteralType":
             return `I.literal("${m.literal}")`
 
-          case "UndefinedKeyword":
-            return "I.undefined"
-
           case "BooleanKeyword":
+            return "I.boolean"
+
+          case "UndefinedKeyword":
             return "I.undefined"
 
           case "NullKeyword":
@@ -330,6 +354,12 @@ export const ${x.name} = MO.AsOpaque<${x.name}Raw, ${x.name}>()(${x.name}_)
             return "I.unknown"
 
           case "UnionType":
+            const filtered = m.types.filter((x) => x.type === "LiteralType")
+            if (filtered.length === m.types.length) {
+              return `I.keyof({ ${m.types
+                .map((x) => `${x.literal}: null`)
+                .join(", ")} })`
+            }
             return `I.union([${m.types.map((x) => makeType(x))}])`
 
           case "IntersectionType":
