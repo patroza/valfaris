@@ -100,7 +100,7 @@ export const doIt = (script: string, typesOnly: any[]) => {
 
     if (ts.SyntaxKind[m.type.kind] === "LastTypeNode") {
       console.log("LAST TYPE NODE", m)
-      return {
+      const v = {
         name: m.name.escapedText,
         type: "TypeReference",
         external: true,
@@ -109,6 +109,18 @@ export const doIt = (script: string, typesOnly: any[]) => {
           ? m.type.typeArguments.map(makeElementType)
           : [],
       }
+      // Hardcode for GraphQL Codegen Maybe.
+      if (v.reference === "Maybe" && v.typeArguments.length) {
+        return {
+          ...v,
+          interpretation: {
+            name: v.name,
+            type: "UnionType",
+            types: [v.typeArguments[0], { type: "NullKeyword" }],
+          },
+        }
+      }
+      return v
       throw new Error("hm")
       return {
         name: m.name.escapedText,
@@ -191,16 +203,6 @@ export const doIt = (script: string, typesOnly: any[]) => {
             return "F.number()"
           case "ArrayType":
             return `F.array(${makeType(m.elementType)})`
-          case "TypeReference":
-            const rootType = definitions.find((d) => d.name === m.reference)
-            if (rootType) {
-              used.push(m.reference)
-            }
-            console.log(m.reference, m)
-            if (m.external) {
-              return `${m.reference}(F)`
-            }
-            return rootType ? `${m.reference}(F)` : `F.${m.reference.toLowerCase()}()`
           case "TypeLiteral": {
             if (!names[name]) {
               names[name] = 0
@@ -212,7 +214,53 @@ export const doIt = (script: string, typesOnly: any[]) => {
               .join("\n")}}, "${name}${nam}")`
           }
 
+          case "TypeReference":
+            const rootType = definitions.find((d) => d.name === m.reference)
+            if (rootType) {
+              used.push(m.reference)
+            }
+            if (m.external) {
+              if (m.interpretation) {
+                return makeType(m.interpretation)
+              }
+              return `${m.reference}(F)`
+            }
+
+            const mref = m.reference.toLowerCase()
+            return rootType ? `${m.reference}(F)` : `F.${mapping[mref] ?? mref}()`
+          case "LiteralType":
+            return `F.stringLiteral("${m.literal}")()`
+
+          case "UndefinedKeyword":
+            return "F.undefined()"
+
+          case "BooleanKeyword":
+            return "F.undefined()"
+
+          case "NullKeyword":
+            return "F.null()"
+
+          case "AnyKeyword":
+            return "F.unknown()"
+
+          case "UnionType":
+            if (!names[name]) {
+              names[name] = 0
+            }
+            const nam = names[name] ? names[name] : ""
+            names[name]++
+            return `F.union([${m.types.map((x) => makeType(x))}], "${name}${nam}")`
+
+          case "IntersectionType":
+            return `F.intersection([${m.types.map((x) => makeType(x))}])`
+
+          case "LastTypeNode":
+            return "F.unknown() /* TODO */"
+
           default: {
+            console.error("No idea", name, JSON.stringify(m, undefined, 2))
+            throw new Error("unhandled node")
+
             return "F.something()"
           }
         }
@@ -249,33 +297,23 @@ export const ${x.name} = MO.AsOpaque<${x.name}Raw, ${x.name}>()(${x.name}_)
             return "I.number"
           case "ArrayType":
             return `I.array(${makeType(m.elementType)})`
+          case "TypeLiteral": {
+            return `I.type({${m.members.map(makeMember).join("\n")}})`
+          }
           case "TypeReference":
             const rootType = definitions.find((d) => d.name === m.reference)
             if (rootType) {
               used.push(m.reference)
             }
             if (m.external) {
-              if (m.reference === "Maybe" && m.typeArguments.length) {
-                return makeType({
-                  name: m.name,
-                  type: "UnionType",
-                  types: [m.typeArguments[0], { type: "NullKeyword" }],
-                })
+              if (m.interpretation) {
+                return makeType(m.interpretation)
               }
               return `${m.reference}`
             }
 
             const mref = m.reference.toLowerCase()
             return rootType ? `${m.reference}` : `I.${mapping[mref] ?? mref}`
-          case "TypeLiteral": {
-            // if (!names[name]) {
-            //     names[name] = 0
-            // }
-            // const nam = names[name] ? names[name] : ""
-            // names[name]++
-            return `I.type({${m.members.map(makeMember).join("\n")}})`
-          }
-
           case "LiteralType":
             return `I.literal("${m.literal}")`
 
