@@ -1,0 +1,41 @@
+{
+    "typescript.tsdk": "./node_modules/typescript/lib",
+    "typescript.tsserver.experimental.enableProjectDiagnostics": true,
+    "editor.formatOnSave": true,
+    "eslint.format.enable": true,
+    "editor.formatOnSaveTimeout": 2500,
+    "[javascript]": {
+      "editor.defaultFormatter": "dbaeumer.vscode-eslint"
+    },
+    "[javascriptreact]": {
+      "editor.defaultFormatter": "dbaeumer.vscode-eslint"
+    },
+    "[typescript]": {
+      "editor.defaultFormatter": "dbaeumer.vscode-eslint"
+    },
+    "[typescriptreact]": {
+      "editor.defaultFormatter": "dbaeumer.vscode-eslint"
+    },
+    "prettier.disableLanguages": [
+      "javascript",
+      "javascriptreact",
+      "typescript",
+      "typescriptreact"
+    ],
+    "auto-run-command.rules": [
+      {
+        "condition": "hasFile: wallaby.js",
+        "command": "wallaby.start",
+        "message": "Running wallaby"
+      },
+    ],
+    "maptz.regionfolder": {
+      "[typescript]": {
+        "defaultFoldStartRegex": "\\/\\/#region\\(collapsed\\)[\\s]*(.*)",
+        "foldEnd": "//#endregion",
+        "foldEndRegex": "\\/\\/#endregion",
+        "foldStart": "//#region",
+        "foldStartRegex": "\\/\\/#region[\\s]*(.*)"
+      }
+    }
+  }
