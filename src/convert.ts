@@ -102,9 +102,10 @@ sourceFile!.forEachChild(function (node) {
     }
 })
 
-const names = {}
+definitions.reverse()
 
 const buildMO = () => {
+    const names = {}
     const mo = []
     const makeMember = m => {
         const makeType = (m) => {
@@ -137,4 +138,41 @@ const buildMO = () => {
     return mo
 }
 
+
+const buildIO = () => {
+    //const names = {}
+    const mo = []
+    const makeMember = m => {
+        const makeType = (m) => {
+            const name = m.name || "Anon"
+            switch (m.type) {
+                case "StringKeyword": return "I.string"
+                case "NumberKeyword": return "I.number"
+                case "ArrayType": return `I.array(${makeType(m.elementType)})`
+                case "TypeReference": return definitions.some(d => d.name === m.reference) ? `${m.reference}` : `IT.${m.reference.toLowerCase()}`
+                case "TypeLiteral": {
+                    // if (!names[name]) {
+                    //     names[name] = 0
+                    // }
+                    // const nam = names[name] ? names[name] : ""
+                    // names[name]++
+                    return `I.type({${m.members.map(makeMember).join("\n")}})`
+                }
+
+                default: { return "I.something" }
+            }
+        }
+        return `${m.name}: ${makeType(m)},`
+    }
+    definitions.forEach(x => {
+        mo.push(
+            `const ${x.name} = I.type({
+    ${x.members.map(makeMember).join("\n")}
+})`)
+    })
+    return mo
+}
+
 console.log(buildMO().join("\n\n"))
+
+console.log(buildIO().join("\n\n"))
