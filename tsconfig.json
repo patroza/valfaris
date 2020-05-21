@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "incremental": true,
+    "allowJs": false,
+    "baseUrl": ".",
+    "experimentalDecorators": true,
+    "declaration": true,
+    "lib": ["dom", "es2015", "esnext"],
+    "skipLibCheck": true,
+    "module": "commonjs",
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "outDir": "dist/ts",
+    "paths": {
+      "@/*": ["src/*"]
+    },
+    "types": ["node", "jest"],
+    "esModuleInterop": true,
+    "removeComments": true,
+    "sourceMap": true,
+    "strict": true,
+    "target": "es2017",
+    "resolveJsonModule": true,
+    "moduleResolution": "node"
+  },
+  "exclude": ["dist", "node_modules"]
+}
