@@ -3,8 +3,9 @@ import fs from "fs"
 import ts, { SyntaxKind } from "typescript"
 
 export const doIt = (script: string, typesOnly: any[]) => {
-  const cfg = ts.readConfigFile("./tsconfig.json", (fn) => fs.readFileSync(fn, "utf-8"))
-  const program = ts.createProgram(["src/samples/simple.ts"], cfg.config)
+  const cfgFile = ts.findConfigFile(script, (fn) => fs.existsSync(fn))
+  const cfg = ts.readConfigFile(cfgFile, (fn) => fs.readFileSync(fn, "utf-8"))
+  const program = ts.createProgram([script], cfg.config)
   //var typeChecker = program.getTypeChecker();
   const sourceFile = program.getSourceFile(script)
   const definitions: any[] = []
@@ -12,20 +13,22 @@ export const doIt = (script: string, typesOnly: any[]) => {
   const parseTypeLiteral = (m: ts.TypeLiteralNode) => ({
     name: m.name.escapedText,
     type: ts.SyntaxKind[m.type.kind],
-    members: m.type.members.map(parseMember),
+    members: m.type.members.map(parseMember).filter(Boolean),
   })
-  const makeElementType = (m) =>
-    m.kind === SyntaxKind.TypeLiteral
-      ? {
-          type: ts.SyntaxKind[m.kind],
-          members: m.members.map(parseMember),
-        }
-      : m.kind === SyntaxKind.TypeReference
-      ? {
-          type: "TypeReference",
-          reference: m.typeName.escapedText,
-        }
-      : { type: ts.SyntaxKind[m.kind] }
+  const makeElementType = (m) => {
+    return parseMember({ name: { elementName: { name: undefined } }, type: m })
+    // return m.kind === SyntaxKind.TypeLiteral
+    //   ? {
+    //       type: ts.SyntaxKind[m.kind],
+    //       members: m.members.map(parseMember).filter(Boolean),
+    //     }
+    //   : m.kind === SyntaxKind.TypeReference
+    //   ? {
+    //       type: "TypeReference",
+    //       reference: m.typeName.escapedText,
+    //     }
+    //   : { type: ts.SyntaxKind[m.kind], help: 1 }
+  }
   const parseMember = (m: ts.TypeElement) => {
     if (ts.isArrayTypeNode(m.type)) {
       return {
@@ -40,35 +43,100 @@ export const doIt = (script: string, typesOnly: any[]) => {
     }
     if (ts.isTypeReferenceNode(m.type)) {
       if (m.type.typeName.escapedText === "Array") {
+        const firstTypeArg = m.type.typeArguments[0]
         return {
           name: m.name.escapedText,
           type: "ArrayType",
           // TODO: support array of objects etc too
           //elementType: parseMember(m.type.typeArguments[0])
-          elementType:
-            m.type.typeArguments[0].kind === SyntaxKind.TypeLiteral
-              ? {
-                  type: ts.SyntaxKind[m.type.typeArguments[0].kind],
-                  members: m.type.typeArguments[0].members.map(parseMember),
-                }
-              : {
-                  type: "TypeReference",
-                  reference: m.type.typeArguments[0].typeName.escapedText,
-                },
+          elementType: makeElementType(firstTypeArg),
+          // firstTypeArg.kind === SyntaxKind.TypeLiteral
+          //   ? {
+          //       type: ts.SyntaxKind[firstTypeArg.kind],
+          //       members: firstTypeArg.members.map(parseMember).filter(Boolean),
+          //     }
+          //   : {
+          //       type: "TypeReference",
+          //       reference: firstTypeArg.typeName.escapedText,
+          //     },
         }
       }
+      console.log(m)
+      throw new Error("wtfff")
       return {
         name: m.name.escapedText,
         type: ts.SyntaxKind[m.type.kind],
         reference: m.type.typeName.escapedText,
       }
     }
-    return {
-      name: m.name.escapedText,
-      type: ts.SyntaxKind[m.type.kind],
-      //rest: m
-      //type: m.
+    if (ts.isTypeOperatorNode(m.type)) {
+      // ignore type ops for now
+      return parseMember({ name: m.name, type: m.type.type })
     }
+    if (ts.isLiteralTypeNode(m.type)) {
+      return {
+        name: m.name.escapedText,
+        type: ts.SyntaxKind[m.type.kind],
+        literal: m.type.literal.text,
+      }
+    }
+
+    if (ts.isUnionTypeNode(m.type)) {
+      return {
+        name: m.name.escapedText,
+        type: ts.SyntaxKind[m.type.kind],
+        types: m.type.types.map((x) => makeElementType(x)).filter(Boolean),
+      }
+    }
+
+    if (ts.SyntaxKind[m.type.kind].endsWith("Keyword")) {
+      return {
+        name: m.name.escapedText,
+        type: ts.SyntaxKind[m.type.kind],
+        //rest: m
+        //type: m.
+      }
+    }
+
+    if (ts.SyntaxKind[m.type.kind] === "LastTypeNode") {
+      console.log("LAST TYPE NODE", m)
+      return {
+        name: m.name.escapedText,
+        type: "TypeReference",
+        external: true,
+        reference: m.type.qualifier.escapedText,
+        typeArguments: m.type.typeArguments
+          ? m.type.typeArguments.map(makeElementType)
+          : [],
+      }
+      throw new Error("hm")
+      return {
+        name: m.name.escapedText,
+        type: ts.SyntaxKind[m.type.kind],
+        //rest: m
+        //type: m.
+      }
+    }
+
+    // if (ts.isLastType) {
+    //     console.log(m)
+    //     throw new Error("type op")
+    //   }
+    if (ts.isParenthesizedTypeNode(m.type)) {
+      return makeElementType(m.type.type)
+    }
+
+    if (ts.isIntersectionTypeNode(m.type)) {
+      return {
+        name: m.name.escapedText,
+        type: ts.SyntaxKind[m.type.kind],
+        types: m.type.types.map((x) => makeElementType(x)).filter(Boolean),
+      }
+    }
+
+    console.log("ehrmmmm", ts.SyntaxKind[m.type.kind], m)
+    throw new Error("y")
+
     // }
   }
 
@@ -81,7 +149,7 @@ export const doIt = (script: string, typesOnly: any[]) => {
 
     definitions.push({
       name,
-      members: node.members.map(parseMember),
+      members: node.members.map(parseMember).filter(Boolean),
     })
   }
 
@@ -94,7 +162,7 @@ export const doIt = (script: string, typesOnly: any[]) => {
 
     definitions.push({
       name,
-      members: node.type.members.map(parseMember),
+      members: node.type.members.map(parseMember).filter(Boolean),
     })
   }
 
@@ -127,7 +195,10 @@ export const doIt = (script: string, typesOnly: any[]) => {
             const rootType = definitions.find((d) => d.name === m.reference)
             if (rootType) {
               used.push(m.reference)
-              console.log("used", used, m.reference)
+            }
+            console.log(m.reference, m)
+            if (m.external) {
+              return `${m.reference}(F)`
             }
             return rootType ? `${m.reference}(F)` : `F.${m.reference.toLowerCase()}()`
           case "TypeLiteral": {
@@ -182,8 +253,18 @@ export const ${x.name} = MO.AsOpaque<${x.name}Raw, ${x.name}>()(${x.name}_)
             const rootType = definitions.find((d) => d.name === m.reference)
             if (rootType) {
               used.push(m.reference)
-              console.log("used", used, m.reference)
             }
+            if (m.external) {
+              if (m.reference === "Maybe" && m.typeArguments.length) {
+                return makeType({
+                  name: m.name,
+                  type: "UnionType",
+                  types: [m.typeArguments[0], { type: "NullKeyword" }],
+                })
+              }
+              return `${m.reference}`
+            }
+
             const mref = m.reference.toLowerCase()
             return rootType ? `${m.reference}` : `I.${mapping[mref] ?? mref}`
           case "TypeLiteral": {
@@ -195,7 +276,34 @@ export const ${x.name} = MO.AsOpaque<${x.name}Raw, ${x.name}>()(${x.name}_)
             return `I.type({${m.members.map(makeMember).join("\n")}})`
           }
 
+          case "LiteralType":
+            return `I.literal("${m.literal}")`
+
+          case "UndefinedKeyword":
+            return "I.undefined"
+
+          case "BooleanKeyword":
+            return "I.undefined"
+
+          case "NullKeyword":
+            return "I.null"
+
+          case "AnyKeyword":
+            return "I.unknown"
+
+          case "UnionType":
+            return `I.union([${m.types.map((x) => makeType(x))}])`
+
+          case "IntersectionType":
+            return `I.intersection([${m.types.map((x) => makeType(x))}])`
+
+          case "LastTypeNode":
+            return "I.unknown /* TODO */"
+
           default: {
+            console.error("No idea", name, JSON.stringify(m, undefined, 2))
+            throw new Error("unhandled node")
+
             return "I.something"
           }
         }
