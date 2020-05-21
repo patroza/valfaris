@@ -2,7 +2,7 @@ import fs from "fs"
 
 import ts, { SyntaxKind } from "typescript"
 
-export const doIt = (script: string) => {
+export const doIt = (script: string, typesOnly: any[]) => {
   const cfg = ts.readConfigFile("./tsconfig.json", (fn) => fs.readFileSync(fn, "utf-8"))
   const program = ts.createProgram(["src/samples/simple.ts"], cfg.config)
   //var typeChecker = program.getTypeChecker();
@@ -111,7 +111,8 @@ export const doIt = (script: string) => {
 
   const buildMO = () => {
     const names = {}
-    const mo = []
+    const mo = {}
+    const used: string[] = []
     const makeMember = (m) => {
       const makeType = (m) => {
         const name = m.name || "Anon"
@@ -123,9 +124,12 @@ export const doIt = (script: string) => {
           case "ArrayType":
             return `F.array(${makeType(m.elementType)})`
           case "TypeReference":
-            return definitions.some((d) => d.name === m.reference)
-              ? `${m.reference}(F)`
-              : `F.${m.reference.toLowerCase()}()`
+            const rootType = definitions.find((d) => d.name === m.reference)
+            if (rootType) {
+              used.push(m.reference)
+              console.log("used", used, m.reference)
+            }
+            return rootType ? `${m.reference}(F)` : `F.${m.reference.toLowerCase()}()`
           case "TypeLiteral": {
             if (!names[name]) {
               names[name] = 0
@@ -144,23 +148,26 @@ export const doIt = (script: string) => {
       }
       return `${m.name}: ${makeType(m)},`
     }
+    console.log("$$$M", typesOnly, used)
+
     definitions.forEach((x) => {
-      mo.push(
-        `const ${x.name}_ = MO.summon((F) => F.interface({
+      mo[x.name] = `const ${x.name}_ = MO.summon((F) => F.interface({
     ${x.members.map(makeMember).join("\n")}
 }, "${x.name}"))
 export interface ${x.name} extends MO.AType<typeof ${x.name}_> {}
 export interface ${x.name}Raw extends MO.EType<typeof ${x.name}_> {}
 export const ${x.name} = MO.AsOpaque<${x.name}Raw, ${x.name}>()(${x.name}_)
 `
-      )
     })
-    return mo
+    return Object.keys(mo)
+      .filter((x) => !typesOnly.length || typesOnly.includes(x) || used.includes(x))
+      .map((x) => mo[x])
   }
 
   const buildIO = () => {
-    //const names = {}
-    const mo = []
+    const mapping = { date: "DateFromISOString" }
+    const used = []
+    const mo = {}
     const makeMember = (m) => {
       const makeType = (m) => {
         const name = m.name || "Anon"
@@ -172,9 +179,13 @@ export const ${x.name} = MO.AsOpaque<${x.name}Raw, ${x.name}>()(${x.name}_)
           case "ArrayType":
             return `I.array(${makeType(m.elementType)})`
           case "TypeReference":
-            return definitions.some((d) => d.name === m.reference)
-              ? `${m.reference}`
-              : `IT.${m.reference.toLowerCase()}`
+            const rootType = definitions.find((d) => d.name === m.reference)
+            if (rootType) {
+              used.push(m.reference)
+              console.log("used", used, m.reference)
+            }
+            const mref = m.reference.toLowerCase()
+            return rootType ? `${m.reference}` : `I.${mapping[mref] ?? mref}`
           case "TypeLiteral": {
             // if (!names[name]) {
             //     names[name] = 0
@@ -191,17 +202,18 @@ export const ${x.name} = MO.AsOpaque<${x.name}Raw, ${x.name}>()(${x.name}_)
       }
       return `${m.name}: ${makeType(m)},`
     }
+    console.log("$$$M", typesOnly, used)
     definitions.forEach((x) => {
-      mo.push(
-        `
+      mo[x.name] = `
 export const ${x.name} = I.type({
     ${x.members.map(makeMember).join("\n")}
 })
 export interface ${x.name} extends I.TypeOf<typeof ${x.name}> {}
 `
-      )
     })
-    return mo
+    return Object.keys(mo)
+      .filter((x) => !typesOnly.length || typesOnly.includes(x) || used.includes(x))
+      .map((x) => mo[x])
   }
 
   console.log("\n\nMorphic:\n")
