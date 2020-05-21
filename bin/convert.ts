@@ -2,7 +2,7 @@
 
 import { doIt } from "@/convert"
 
-const rootTypes = process.argv.slice(2)
+const rootTypes = process.argv.slice(3)
 console.log(rootTypes)
 
-doIt("./src/samples/simple.ts")
+doIt(process.argv[2], rootTypes)
