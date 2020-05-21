@@ -146,9 +146,13 @@ export const doIt = (script: string) => {
     }
     definitions.forEach((x) => {
       mo.push(
-        `const ${x.name} = summon((F) => F.interface({
+        `const ${x.name}_ = MO.summon((F) => F.interface({
     ${x.members.map(makeMember).join("\n")}
-}, "${x.name}"))`
+}, "${x.name}"))
+export interface ${x.name} extends MO.AType<typeof ${x.name}_> {}
+export interface ${x.name}Raw extends MO.EType<typeof ${x.name}_> {}
+export const ${x.name} = MO.AsOpaque<${x.name}Raw, ${x.name}>()(${x.name}_)
+`
       )
     })
     return mo
@@ -189,15 +193,20 @@ export const doIt = (script: string) => {
     }
     definitions.forEach((x) => {
       mo.push(
-        `const ${x.name} = I.type({
+        `
+export const ${x.name} = I.type({
     ${x.members.map(makeMember).join("\n")}
-})`
+})
+export interface ${x.name} extends I.TypeOf<typeof ${x.name}> {}
+`
       )
     })
     return mo
   }
 
+  console.log("\n\nMorphic:\n")
   console.log(buildMO().join("\n\n"))
 
+  console.log("\n\nIO-TS:\n")
   console.log(buildIO().join("\n\n"))
 }
