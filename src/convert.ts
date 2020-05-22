@@ -325,9 +325,10 @@ export const doIt = (script: string, typesOnly: any[], filterFields = (_) => tru
 
     definitions.forEach((x) => {
       if (x.type === "alias") {
-        mo[x.name] = `const ${x.name} = ${x.alias}`
+        mo[x.name] = `export const ${x.name} = ${x.alias}`
+        mo[x.name] = `export type ${x.name} = ${x.alias}`
       } else if (x.type === "union") {
-        mo[x.name] = `const ${x.name} = MO.summon((F) => ${makeType(x.union)}`
+        mo[x.name] = `export const ${x.name} = MO.summon((F) => ${makeType(x.union)})`
       } else {
         mo[x.name] = `const ${x.name}_ = MO.summon((F) => F.interface({
         ${x.members.map(makeMember).join("\n")}
@@ -372,7 +373,9 @@ export const doIt = (script: string, typesOnly: any[], filterFields = (_) => tru
           }
 
           const mref = m.reference.toLowerCase()
-          return rootType ? `${m.reference}` : `I.${mapping[mref] ?? mref}`
+          return rootType
+            ? `I.reference(${m.reference}, () => ${m.reference})`
+            : `I.${mapping[mref] ?? mref}`
         case "LiteralType":
           return `I.literal("${m.literal}")`
 
@@ -430,9 +433,10 @@ export const doIt = (script: string, typesOnly: any[], filterFields = (_) => tru
     }
     definitions.forEach((x) => {
       if (x.type === "alias") {
-        mo[x.name] = `const ${x.name} = ${x.alias}`
+        mo[x.name] = `export const ${x.name} = ${x.alias}`
+        mo[x.name] = `export type ${x.name} = ${x.alias}`
       } else if (x.type === "union") {
-        mo[x.name] = `const ${x.name} = ${makeType(x.union)}`
+        mo[x.name] = `export const ${x.name} = ${makeType(x.union)}`
       } else {
         mo[x.name] = `
 export const ${x.name} = I.type({
@@ -459,15 +463,27 @@ export interface ${x.name} extends I.TypeOf<typeof ${x.name}> {}
   const io = buildIO()
   console.log(io.join("\n\n"))
 
+  const localioF = "./src/samples/cms.IO.ts"
+  const localmoF = "./src/samples/cms.MO.ts"
+  const ioF = script + ".IO.ts"
+  const moF = script + ".MO.ts"
   fs.writeFileSync(
-    "./src/samples/cms.IO.ts",
+    localioF,
     `import * as I from "./iots"\n\n${io.join("\n\n")}`,
     "utf-8"
   )
+  fs.writeFileSync(ioF, `import * as I from "./iots"\n\n${io.join("\n\n")}`, "utf-8")
   fs.writeFileSync(
-    "./src/samples/cms.MO.ts",
-    `import * as MO from "./morphic"\n\n${io.join("\n\n")}`,
+    moF,
+    `import * as MO from "./morphic"\n\n${mo.join("\n\n")}`,
     "utf-8"
   )
-  execSync("prettier --write ./src/samples/cms.IO.ts ./src/samples/cms.MO.ts")
+  fs.writeFileSync(
+    localmoF,
+    `import * as MO from "./morphic"\n\n${mo.join("\n\n")}`,
+    "utf-8"
+  )
+
+  const files = [ioF, moF, localioF, localmoF]
+  execSync(`prettier --write ${files.join(" ")}`)
 }
