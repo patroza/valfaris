@@ -256,7 +256,9 @@ export const doIt = (script: string, typesOnly: any[], filterFields = (_) => tru
           }
 
           const mref = m.reference.toLowerCase()
-          return rootType ? `${m.reference}(F)` : `F.${mapping[mref] ?? mref}()`
+          return rootType
+            ? `${m.reference}(F)` // `F.recursive(() => ${m.reference}(F), "${m.reference}")`
+            : `F.${mapping[mref] ?? mref}()`
         case "LiteralType":
           return `F.stringLiteral("${m.literal}")`
 
@@ -325,8 +327,9 @@ export const doIt = (script: string, typesOnly: any[], filterFields = (_) => tru
 
     definitions.forEach((x) => {
       if (x.type === "alias") {
-        mo[x.name] = `export const ${x.name} = ${x.alias}`
-        mo[x.name] = `export type ${x.name} = ${x.alias}`
+        mo[
+          x.name
+        ] = `export const ${x.name} = ${x.alias}\nexport type ${x.name} = ${x.alias}`
       } else if (x.type === "union") {
         mo[x.name] = `export const ${x.name} = MO.summon((F) => ${makeType(x.union)})`
       } else {
@@ -374,7 +377,7 @@ export const doIt = (script: string, typesOnly: any[], filterFields = (_) => tru
 
           const mref = m.reference.toLowerCase()
           return rootType
-            ? `I.reference(${m.reference}, () => ${m.reference})`
+            ? `${m.reference}` // `I.recursion("${m.reference}", () => ${m.reference})`
             : `I.${mapping[mref] ?? mref}`
         case "LiteralType":
           return `I.literal("${m.literal}")`
@@ -433,8 +436,9 @@ export const doIt = (script: string, typesOnly: any[], filterFields = (_) => tru
     }
     definitions.forEach((x) => {
       if (x.type === "alias") {
-        mo[x.name] = `export const ${x.name} = ${x.alias}`
-        mo[x.name] = `export type ${x.name} = ${x.alias}`
+        mo[
+          x.name
+        ] = `export const ${x.name} = ${x.alias}\nexport type ${x.name} = ${x.alias}`
       } else if (x.type === "union") {
         mo[x.name] = `export const ${x.name} = ${makeType(x.union)}`
       } else {
