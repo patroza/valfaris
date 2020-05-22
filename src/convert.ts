@@ -31,6 +31,17 @@ export const doIt = (script: string, typesOnly: any[], filterFields = (_) => tru
     //   : { type: ts.SyntaxKind[m.kind], help: 1 }
   }
   const parseMember = (m: ts.TypeElement) => {
+    const parsedMember = parseMember2(m)
+    if (m.questionToken) {
+      return {
+        name: m.name.escapedText,
+        type: "UnionType",
+        types: [parsedMember, { type: "UndefinedKeyword" }],
+      }
+    }
+    return parsedMember
+  }
+  const parseMember2 = (m: ts.TypeElement) => {
     if (ts.isArrayTypeNode(m.type)) {
       return {
         name: m.name.escapedText,
@@ -72,6 +83,8 @@ export const doIt = (script: string, typesOnly: any[], filterFields = (_) => tru
     }
     if (ts.isTypeOperatorNode(m.type)) {
       // ignore type ops for now
+      //   console.log(m)
+      //   throw new Error("boom")
       return parseMember({ name: m.name, type: m.type.type })
     }
     if (ts.isLiteralTypeNode(m.type)) {
@@ -164,7 +177,6 @@ export const doIt = (script: string, typesOnly: any[], filterFields = (_) => tru
     //container.push([name, node]);
 
     const name = node.name.text
-    //console.log([name, node])
 
     definitions.push({
       name,
@@ -177,7 +189,6 @@ export const doIt = (script: string, typesOnly: any[], filterFields = (_) => tru
     //container.push([name, node]);
 
     const name = node.name.escapedText
-    console.log([name, node, SyntaxKind[node.type.kind]])
 
     if (SyntaxKind[node.type.kind] === "TypeReference") {
       definitions.push({
@@ -454,18 +465,20 @@ export interface ${x.name} extends I.TypeOf<typeof ${x.name}> {}
       .filter((x) => !typesOnly.length || typesOnly.includes(x) || used.includes(x))
       .map((x) => mo[x])
   }
+  const mo = buildMO()
+  const io = buildIO()
 
-  console.log(`
+  if (false) {
+    console.log(`
   import * as I from "./iots"
   import * as MO from "./morphic"
 \n\n`)
-  console.log("\n\n//Morphic:\n")
-  const mo = buildMO()
-  console.log(mo.join("\n\n"))
+    console.log("\n\n//Morphic:\n")
+    console.log(mo.join("\n\n"))
 
-  console.log("\n\n//IO-TS:\n")
-  const io = buildIO()
-  console.log(io.join("\n\n"))
+    console.log("\n\n//IO-TS:\n")
+    console.log(io.join("\n\n"))
+  }
 
   const localioF = "./src/samples/cms.IO.ts"
   const localmoF = "./src/samples/cms.MO.ts"
