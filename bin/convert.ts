@@ -3,6 +3,5 @@
 import { doIt } from "@/convert"
 
 const rootTypes = process.argv.slice(3)
-console.log(rootTypes)
 
-doIt(process.argv[2], rootTypes)
+doIt(process.argv[2], rootTypes, (x) => x.name !== "___typename")
