@@ -7,7 +7,8 @@ import { Ord, pipe, A, O } from "@/framework"
 
 const config = {
   morphic: {
-    mergeHeritage: true,
+    //mergeHeritage: true,
+    mergeHeritage: false,
   },
   io: {
     mergeHeritage: false,
@@ -350,7 +351,7 @@ export const doIt = (
           return `F.union([${m.types.map((x) => makeType(x))}], "${name}${nam}")`
 
         case "IntersectionType":
-          return `F.intersection([${m.types.map((x) => makeType(x))}])`
+          return `F.intersection([${m.types.map((x) => makeType(x))}], "${name}")`
 
         case "LastTypeNode":
           return "F.unknown() /* TODO */"
@@ -385,9 +386,8 @@ export const doIt = (
 
         mo[x.name] = `const ${x.name}_ = MO.summon((F) => ${
           !cfg.mergeHeritage && x.heritage.length
-            ? `F.intersection([${x.heritage
-                .map((x) => `${x}(F)`)
-                .join(", ")}, ${type}])`
+            ? `F.intersection([${x.heritage.map((x) => `${x}(F)`).join(", ")}, ${type}],
+                "${x.name}")`
             : type
         })
     export interface ${x.name} extends MO.AType<typeof ${x.name}_> {}
