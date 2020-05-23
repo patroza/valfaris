@@ -5,6 +5,15 @@ import ts, { SyntaxKind } from "typescript"
 
 import { Ord, pipe, A, O } from "@/framework"
 
+const config = {
+  morphic: {
+    mergeHeritage: true,
+  },
+  io: {
+    mergeHeritage: false,
+  },
+}
+
 export const doIt = (
   script: string,
   typesOnly: string[],
@@ -253,7 +262,7 @@ export const doIt = (
 
   definitions.reverse()
 
-  const buildMO = () => {
+  const buildMO = (cfg) => {
     const names = {}
     const mo = {}
     const used: string[] = []
@@ -367,12 +376,15 @@ export const doIt = (
       } else if (x.type === "union") {
         mo[x.name] = `export const ${x.name} = MO.summon((F) => ${makeType(x.union)})`
       } else {
-        used.push(...x.heritage)
+        const members = getMembers(cfg.mergeHeritage, x, used)
         const type = `F.interface({
-          ${x.members.map(makeMember).join("\n")}
+          ${members
+            .map((x) => makeMember(x) + (x.inherited ? " // " + x.inherited : ""))
+            .join("\n")}
       }, "${x.name}")`
+
         mo[x.name] = `const ${x.name}_ = MO.summon((F) => ${
-          x.heritage.length
+          !cfg.mergeHeritage && x.heritage.length
             ? `F.intersection([${x.heritage
                 .map((x) => `${x}(F)`)
                 .join(", ")}, ${type}])`
@@ -393,7 +405,7 @@ export const doIt = (
     )
   }
 
-  const buildIO = () => {
+  const buildIO = (cfg) => {
     const mapping = { date: "DateFromISOString" }
     const used = []
     const mo = {}
@@ -488,16 +500,18 @@ export const doIt = (
       } else if (x.type === "union") {
         mo[x.name] = `export const ${x.name} = ${makeType(x.union)}`
       } else {
-        used.push(...x.heritage)
+        const members = getMembers(cfg.mergeHeritage, x, used)
+        const type = `I.type({
+          ${members
+            .map((x) => makeMember(x) + (x.inherited ? " // " + x.inherited : ""))
+            .join("\n")}
+      })`
+
         mo[x.name] = `
 const ${x.name}_ = ${
-          x.heritage.length
-            ? `I.intersection([${x.heritage.join(", ")} , I.type({
-              ${x.members.map(makeMember).join("\n")}
-})])`
-            : `I.type({
-  ${x.members.map(makeMember).join("\n")}
-})`
+          !cfg.mergeHeritage && x.heritage.length
+            ? `I.intersection([${x.heritage.join(", ")} , ${type}])`
+            : type
         }
 export const ${x.name}: I.Type<${x.name}> = ${x.name}_
 export interface ${x.name} extends I.TypeOf<typeof ${x.name}_> {}
@@ -520,11 +534,35 @@ export interface ${x.name} extends I.TypeOf<typeof ${x.name}_> {}
         A.findIndex((u) => u === x),
         O.getOrElse(() => 1000)
       )
-      console.log("a", a)
       return a
     })(Ord.ordNumber)
-  const mo = buildMO()
-  const io = buildIO()
+
+  function getMembers(mergeHeritage, x, used) {
+    const r = {}
+    const merge = (members, heritage: string[], root?: string) => {
+      // TODO: multi level heritage :/
+      heritage.forEach((x) => {
+        const h = definitions.find((d) => d.name === x)
+        return merge(h.members, h.heritage, h.name)
+        // if (h.heritage && h.heritage.length) {
+
+        // }
+        // h.members.forEach((m) => (r[m.name] = { ...m, inherited: root }))
+      })
+      members.forEach((x) => (r[x.name] = { ...x, inherited: root }))
+      return r
+    }
+
+    if (!mergeHeritage) {
+      used.push(...x.heritage)
+    }
+    const members = mergeHeritage
+      ? Object.values(merge(x.members, x.heritage))
+      : x.members
+    return members
+  }
+  const mo = buildMO(config.morphic)
+  const io = buildIO(config.io)
 
   if (false) {
     console.log(`
