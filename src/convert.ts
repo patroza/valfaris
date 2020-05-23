@@ -3,6 +3,8 @@ import fs from "fs"
 
 import ts, { SyntaxKind } from "typescript"
 
+import { Ord, pipe, A, O } from "@/framework"
+
 export const doIt = (
   script: string,
   typesOnly: string[],
@@ -188,9 +190,17 @@ export const doIt = (
 
     const name = node.name.text
 
+    let heritage = []
+    if (node.heritageClauses && node.heritageClauses.length) {
+      heritage = node.heritageClauses
+        .flatMap((x) => x.types)
+        .map((x) => x.expression.escapedText)
+    }
+
     definitions.push({
       name,
       members: node.members.map(parseMember).filter(Boolean).filter(filterFields),
+      heritage,
     })
   }
 
@@ -229,14 +239,17 @@ export const doIt = (
     }
   }
 
-  sourceFile!.forEachChild(function (node) {
+  function processNode(node: ts.Node) {
     if (ts.isInterfaceDeclaration(node)) {
       return processInterface(node)
     }
     if (ts.isTypeAliasDeclaration(node)) {
       return processType(node)
     }
-  })
+    return null
+  }
+
+  sourceFile!.forEachChild(processNode)
 
   definitions.reverse()
 
@@ -354,18 +367,30 @@ export const doIt = (
       } else if (x.type === "union") {
         mo[x.name] = `export const ${x.name} = MO.summon((F) => ${makeType(x.union)})`
       } else {
-        mo[x.name] = `const ${x.name}_ = MO.summon((F) => F.interface({
-        ${x.members.map(makeMember).join("\n")}
-    }, "${x.name}"))
+        used.push(...x.heritage)
+        const type = `F.interface({
+          ${x.members.map(makeMember).join("\n")}
+      }, "${x.name}")`
+        mo[x.name] = `const ${x.name}_ = MO.summon((F) => ${
+          x.heritage.length
+            ? `F.intersection([${x.heritage
+                .map((x) => `${x}(F)`)
+                .join(", ")}, ${type}])`
+            : type
+        })
     export interface ${x.name} extends MO.AType<typeof ${x.name}_> {}
     export interface ${x.name}Raw extends MO.EType<typeof ${x.name}_> {}
     export const ${x.name} = MO.AsOpaque<${x.name}Raw, ${x.name}>()(${x.name}_)
     `
       }
     })
-    return Object.keys(mo)
-      .filter((x) => !typesOnly.length || typesOnly.includes(x) || used.includes(x))
-      .map((x) => mo[x])
+    return pipe(
+      Object.keys(mo).filter(
+        (x) => !typesOnly.length || typesOnly.includes(x) || used.includes(x)
+      ),
+      A.sort(order(used)),
+      A.map((x) => mo[x])
+    )
   }
 
   const buildIO = () => {
@@ -463,19 +488,41 @@ export const doIt = (
       } else if (x.type === "union") {
         mo[x.name] = `export const ${x.name} = ${makeType(x.union)}`
       } else {
+        used.push(...x.heritage)
         mo[x.name] = `
-const ${x.name}_ = I.type({
-    ${x.members.map(makeMember).join("\n")}
-})
+const ${x.name}_ = ${
+          x.heritage.length
+            ? `I.intersection([${x.heritage.join(", ")} , I.type({
+              ${x.members.map(makeMember).join("\n")}
+})])`
+            : `I.type({
+  ${x.members.map(makeMember).join("\n")}
+})`
+        }
 export const ${x.name}: I.Type<${x.name}> = ${x.name}_
 export interface ${x.name} extends I.TypeOf<typeof ${x.name}_> {}
 `
       }
     })
-    return Object.keys(mo)
-      .filter((x) => !typesOnly.length || typesOnly.includes(x) || used.includes(x))
-      .map((x) => mo[x])
+    return pipe(
+      Object.keys(mo).filter(
+        (x) => !typesOnly.length || typesOnly.includes(x) || used.includes(x)
+      ),
+      A.sort(order(used)),
+      A.map((x) => mo[x])
+    )
   }
+
+  const order = (used: string[]): Ord.Ord<string> =>
+    Ord.contramap((x: string) => {
+      const a = pipe(
+        used,
+        A.findIndex((u) => u === x),
+        O.getOrElse(() => 1000)
+      )
+      console.log("a", a)
+      return a
+    })(Ord.ordNumber)
   const mo = buildMO()
   const io = buildIO()
 
