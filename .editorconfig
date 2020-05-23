@@ -1,0 +1,26 @@
+# EditorConfig is awesome: http://EditorConfig.org
+
+# top-most EditorConfig file
+root = true
+
+[*]
+max_line_length=88
+trim_trailing_whitespace = true
+insert_final_newline = true
+
+indent_style = space
+indent_size = 2
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+charset = utf-8
+
+[*.{html,js,scss}]
+indent_style = space
+indent_size = 2
+
+[*.ejs.t]
+insert_final_newline = false
+
+[*.md]
+trim_trailing_whitespace = false
