@@ -3,20 +3,30 @@ import fs from "fs"
 
 import ts, { SyntaxKind } from "typescript"
 
-export const doIt = (script: string, typesOnly: any[], filterFields = (_) => true) => {
+export const doIt = (
+  script: string,
+  typesOnly: string[],
+  filterFields = (_: string) => true
+) => {
   const cfgFile = ts.findConfigFile(script, (fn) => fs.existsSync(fn))
+  if (!cfgFile) {
+    throw new Error("No TS config file found")
+  }
+
   const cfg = ts.readConfigFile(cfgFile, (fn) => fs.readFileSync(fn, "utf-8"))
   const program = ts.createProgram([script], cfg.config)
   //var typeChecker = program.getTypeChecker();
   const sourceFile = program.getSourceFile(script)
   const definitions: any[] = []
 
-  const parseTypeLiteral = (m: ts.TypeLiteralNode) => ({
-    name: m.name.escapedText,
-    type: ts.SyntaxKind[m.type.kind],
-    members: m.type.members.map(parseMember).filter(Boolean).filter(filterFields),
-  })
-  const makeElementType = (m) => {
+  function parseTypeLiteral(m: ts.TypeLiteralNode) {
+    return {
+      name: m.name.escapedText,
+      type: ts.SyntaxKind[m.type.kind],
+      members: m.type.members.map(parseMember).filter(Boolean).filter(filterFields),
+    }
+  }
+  function makeElementType(m) {
     return parseMember({ name: { elementName: { name: undefined } }, type: m })
     // return m.kind === SyntaxKind.TypeLiteral
     //   ? {
@@ -30,21 +40,21 @@ export const doIt = (script: string, typesOnly: any[], filterFields = (_) => tru
     //     }
     //   : { type: ts.SyntaxKind[m.kind], help: 1 }
   }
-  const parseMember = (m: ts.TypeElement) => {
+  function parseMember(m: ts.TypeElement) {
     const parsedMember = parseMember2(m)
     if (m.questionToken) {
       return {
-        name: m.name.escapedText,
+        name: m.name!.escapedText,
         type: "UnionType",
         types: [parsedMember, { type: "UndefinedKeyword" }],
       }
     }
     return parsedMember
   }
-  const parseMember2 = (m: ts.TypeElement) => {
+  function parseMember2(m: ts.TypeElement) {
     if (ts.isArrayTypeNode(m.type)) {
       return {
-        name: m.name.escapedText,
+        name: m.name!.escapedText,
         type: ts.SyntaxKind[m.type.kind],
         // TODO: support array of objects etc too
         elementType: makeElementType(m.type.elementType),
@@ -454,10 +464,11 @@ export const doIt = (script: string, typesOnly: any[], filterFields = (_) => tru
         mo[x.name] = `export const ${x.name} = ${makeType(x.union)}`
       } else {
         mo[x.name] = `
-export const ${x.name} = I.type({
+const ${x.name}_ = I.type({
     ${x.members.map(makeMember).join("\n")}
 })
-export interface ${x.name} extends I.TypeOf<typeof ${x.name}> {}
+export const ${x.name}: I.Type<${x.name}> = ${x.name}_
+export interface ${x.name} extends I.TypeOf<typeof ${x.name}_> {}
 `
       }
     })
