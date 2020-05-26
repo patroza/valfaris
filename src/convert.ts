@@ -16,6 +16,19 @@ const config = {
   },
 }
 
+function makeFullName(names: Record<string, number>) {
+  return (name: string) => {
+    if (!names[name]) {
+      names[name] = 0
+    }
+    const nam = names[name] ? names[name] : ""
+    names[name]++
+
+    const fullName = `${name}${nam}`
+    return fullName
+  }
+}
+
 export const doIt = (
   script: string,
   typesOnly: string[],
@@ -268,7 +281,7 @@ export const doIt = (
   definitions.reverse()
 
   const buildMO = (cfg) => {
-    const names = {}
+    const makeFullN = makeFullName({})
     const mo = {}
     const used: string[] = []
     const makeType = (m) => {
@@ -281,14 +294,9 @@ export const doIt = (
         case "ArrayType":
           return `F.array(${makeType(m.elementType)})`
         case "TypeLiteral": {
-          if (!names[name]) {
-            names[name] = 0
-          }
-          const nam = names[name] ? names[name] : ""
-          names[name]++
-          return `F.interface({${m.members
-            .map(makeMember)
-            .join("\n")}}, "${name}${nam}")`
+          return `F.interface({${m.members.map(makeMember).join("\n")}}, "${makeFullN(
+            name
+          )}")`
         }
 
         case "TypeReference":
@@ -346,13 +354,7 @@ export const doIt = (
               .join(", ")} })`
           }
 
-          if (!names[name]) {
-            names[name] = 0
-          }
-          const nam = names[name] ? names[name] : ""
-          names[name]++
-
-          return `F.union([${m.types.map((x) => makeType(x))}], "${name}${nam}")`
+          return `F.union([${m.types.map((x) => makeType(x))}], "${makeFullN(name)}")`
 
         case "IntersectionType":
           return `F.intersection([${m.types.map((x) => makeType(x))}], "${name}")`
@@ -415,7 +417,7 @@ export const doIt = (
 
   const buildIO = (cfg) => {
     const mapping = { date: "DateFromISOString" }
-    const names = {}
+    const makeFullN = makeFullName({})
     const used = []
     const mo = {}
     const makeType = (m) => {
@@ -428,12 +430,9 @@ export const doIt = (
         case "ArrayType":
           return `I.array(${makeType(m.elementType)})`
         case "TypeLiteral": {
-          if (!names[name]) {
-            names[name] = 0
-          }
-          const nam = names[name] ? names[name] : ""
-          names[name]++
-          return `I.type({${m.members.map(makeMember).join("\n")}}, "${name}")`
+          return `I.type({${m.members.map(makeMember).join("\n")}}, "${makeFullN(
+            name
+          )}")`
         }
         case "TypeReference":
           const rootType = definitions.find((d) => d.name === m.reference)
@@ -487,10 +486,10 @@ export const doIt = (
             return `I.keyof({ ${m.types.map((x) => `${x.literal}: null`).join(", ")} })`
           }
 
-          return `I.union([${m.types.map((x) => makeType(x))}])`
+          return `I.union([${m.types.map((x) => makeType(x))}], "${makeFullN(name)}")`
 
         case "IntersectionType":
-          return `I.intersection([${m.types.map((x) => makeType(x))}])`
+          return `I.intersection([${m.types.map((x) => makeType(x))}], "${name}")`
 
         case "LastTypeNode":
           return "I.unknown /* TODO */"
@@ -514,17 +513,18 @@ export const doIt = (
       } else if (x.type === "union") {
         mo[x.name] = `export const ${x.name} = ${makeType(x.union)}`
       } else {
+        const shouldIntersect = !cfg.mergeHeritage && x.heritage.length
         const members = getMembers(cfg.mergeHeritage, x, used)
         const type = `I.type({
           ${members
             .map((x) => makeMember(x) + (x.inherited ? " // " + x.inherited : ""))
             .join("\n")}
-      }, "${x.name}")`
+      }, "${x.name}${shouldIntersect ? "Core" : ""}")`
 
         mo[x.name] = `
 const ${x.name}_ = ${
           !cfg.mergeHeritage && x.heritage.length
-            ? `I.intersection([${x.heritage.join(", ")} , ${type}])`
+            ? `I.intersection([${x.heritage.join(", ")} , ${type}], "${x.name}")`
             : type
         }
 export const ${x.name}: I.Type<${x.name}> = ${x.name}_
