@@ -1,6 +1,7 @@
 import { execSync } from "child_process"
 import fs from "fs"
 
+import { singularize, camelize } from "inflected"
 import ts, { SyntaxKind } from "typescript"
 
 import { Ord, pipe, A, O } from "@/framework"
@@ -38,8 +39,8 @@ export const doIt = (
       members: m.type.members.map(parseMember).filter(Boolean).filter(filterFields),
     }
   }
-  function makeElementType(m) {
-    return parseMember({ name: { elementName: { name: undefined } }, type: m })
+  function makeElementType(m, name?: string) {
+    return parseMember({ name: { escapedText: name }, type: m })
     // return m.kind === SyntaxKind.TypeLiteral
     //   ? {
     //       type: ts.SyntaxKind[m.kind],
@@ -65,11 +66,15 @@ export const doIt = (
   }
   function parseMember2(m: ts.TypeElement) {
     if (ts.isArrayTypeNode(m.type)) {
+      const name = m.name!.escapedText
       return {
-        name: m.name!.escapedText,
+        name,
         type: ts.SyntaxKind[m.type.kind],
         // TODO: support array of objects etc too
-        elementType: makeElementType(m.type.elementType),
+        elementType: makeElementType(
+          m.type.elementType,
+          pipe(name, singularize, camelize)
+        ),
       }
     }
     if (ts.isTypeLiteralNode(m.type)) {
@@ -78,12 +83,13 @@ export const doIt = (
     if (ts.isTypeReferenceNode(m.type)) {
       if (m.type.typeName.escapedText === "Array") {
         const firstTypeArg = m.type.typeArguments[0]
+        const name = m.name.escapedText
         return {
-          name: m.name.escapedText,
+          name,
           type: "ArrayType",
           // TODO: support array of objects etc too
           //elementType: parseMember(m.type.typeArguments[0])
-          elementType: makeElementType(firstTypeArg),
+          elementType: makeElementType(firstTypeArg, pipe(name, singularize, camelize)),
           // firstTypeArg.kind === SyntaxKind.TypeLiteral
           //   ? {
           //       type: ts.SyntaxKind[firstTypeArg.kind],
@@ -121,8 +127,7 @@ export const doIt = (
       return {
         name: m.name.escapedText,
         type: ts.SyntaxKind[m.type.kind],
-        types: m.type.types
-          .map((x) => makeElementType(x))
+        types: pipe(m.type.types, A.map(makeElementType))
           .filter(Boolean)
           .filter(filterFields),
       }
@@ -145,7 +150,7 @@ export const doIt = (
         external: true,
         reference: m.type.qualifier.escapedText,
         typeArguments: m.type.typeArguments
-          ? m.type.typeArguments.map(makeElementType)
+          ? pipe(m.type.typeArguments, A.map(makeElementType))
           : [],
       }
       // Hardcode for GraphQL Codegen Maybe.
@@ -181,8 +186,7 @@ export const doIt = (
       return {
         name: m.name.escapedText,
         type: ts.SyntaxKind[m.type.kind],
-        types: m.type.types
-          .map((x) => makeElementType(x))
+        types: pipe(m.type.types, A.map(makeElementType))
           .filter(Boolean)
           .filter(filterFields),
       }
@@ -366,7 +370,10 @@ export const doIt = (
     }
 
     const makeMember = (m) => {
-      return `${m.name}: ${makeType(m)},`
+      return `${m.name}: ${makeType({
+        ...m,
+        name: pipe(m.name, camelize),
+      })},`
     }
 
     definitions.forEach((x) => {
@@ -377,15 +384,16 @@ export const doIt = (
       } else if (x.type === "union") {
         mo[x.name] = `export const ${x.name} = MO.summon((F) => ${makeType(x.union)})`
       } else {
+        const shouldIntersect = !cfg.mergeHeritage && x.heritage.length
         const members = getMembers(cfg.mergeHeritage, x, used)
         const type = `F.interface({
           ${members
             .map((x) => makeMember(x) + (x.inherited ? " // " + x.inherited : ""))
             .join("\n")}
-      }, "${x.name}")`
+      }, "${x.name}${shouldIntersect ? "Core" : ""}")`
 
         mo[x.name] = `const ${x.name}_ = MO.summon((F) => ${
-          !cfg.mergeHeritage && x.heritage.length
+          shouldIntersect
             ? `F.intersection([${x.heritage.map((x) => `${x}(F)`).join(", ")}, ${type}],
                 "${x.name}")`
             : type
@@ -407,6 +415,7 @@ export const doIt = (
 
   const buildIO = (cfg) => {
     const mapping = { date: "DateFromISOString" }
+    const names = {}
     const used = []
     const mo = {}
     const makeType = (m) => {
@@ -419,7 +428,12 @@ export const doIt = (
         case "ArrayType":
           return `I.array(${makeType(m.elementType)})`
         case "TypeLiteral": {
-          return `I.type({${m.members.map(makeMember).join("\n")}})`
+          if (!names[name]) {
+            names[name] = 0
+          }
+          const nam = names[name] ? names[name] : ""
+          names[name]++
+          return `I.type({${m.members.map(makeMember).join("\n")}}, "${name}")`
         }
         case "TypeReference":
           const rootType = definitions.find((d) => d.name === m.reference)
@@ -505,7 +519,7 @@ export const doIt = (
           ${members
             .map((x) => makeMember(x) + (x.inherited ? " // " + x.inherited : ""))
             .join("\n")}
-      })`
+      }, "${x.name}")`
 
         mo[x.name] = `
 const ${x.name}_ = ${
