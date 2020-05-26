@@ -283,6 +283,7 @@ export const doIt = (
   const buildMO = (cfg) => {
     const makeFullN = makeFullName({})
     const mo = {}
+    const mapping = {}
     const used: string[] = []
     const makeType = (m) => {
       const name = m.name || "Anon"
@@ -386,7 +387,7 @@ export const doIt = (
       } else if (x.type === "union") {
         mo[x.name] = `export const ${x.name} = MO.summon((F) => ${makeType(x.union)})`
       } else {
-        const shouldIntersect = !cfg.mergeHeritage && x.heritage.length
+        const shouldIntersect = !cfg.mergeHeritage && x.heritage?.length
         const members = getMembers(cfg.mergeHeritage, x, used)
         const type = `F.interface({
           ${members
@@ -513,7 +514,7 @@ export const doIt = (
       } else if (x.type === "union") {
         mo[x.name] = `export const ${x.name} = ${makeType(x.union)}`
       } else {
-        const shouldIntersect = !cfg.mergeHeritage && x.heritage.length
+        const shouldIntersect = !cfg.mergeHeritage && x.heritage?.length
         const members = getMembers(cfg.mergeHeritage, x, used)
         const type = `I.type({
           ${members
@@ -523,11 +524,13 @@ export const doIt = (
 
         mo[x.name] = `
 const ${x.name}_ = ${
-          !cfg.mergeHeritage && x.heritage.length
+          shouldIntersect
             ? `I.intersection([${x.heritage.join(", ")} , ${type}], "${x.name}")`
             : type
         }
-export const ${x.name}: I.Type<${x.name}> = ${x.name}_
+export const ${x.name}: I.Type<${x.name}, typeof ${x.name}_["_O"], typeof ${
+          x.name
+        }_["_I"]> = ${x.name}_
 export interface ${x.name} extends I.TypeOf<typeof ${x.name}_> {}
 `
       }
@@ -567,7 +570,7 @@ export interface ${x.name} extends I.TypeOf<typeof ${x.name}_> {}
       return r
     }
 
-    if (!mergeHeritage) {
+    if (!mergeHeritage && x.heritage) {
       used.push(...x.heritage)
     }
     const members = mergeHeritage
@@ -590,27 +593,15 @@ export interface ${x.name} extends I.TypeOf<typeof ${x.name}_> {}
     console.log(io.join("\n\n"))
   }
 
-  const localioF = "./src/samples/cms.IO.ts"
-  const localmoF = "./src/samples/cms.MO.ts"
   const ioF = script + ".IO.ts"
   const moF = script + ".MO.ts"
-  fs.writeFileSync(
-    localioF,
-    `import * as I from "./iots"\n\n${io.join("\n\n")}`,
-    "utf-8"
-  )
   fs.writeFileSync(ioF, `import * as I from "./iots"\n\n${io.join("\n\n")}`, "utf-8")
   fs.writeFileSync(
     moF,
     `import * as MO from "./morphic"\n\n${mo.join("\n\n")}`,
     "utf-8"
   )
-  fs.writeFileSync(
-    localmoF,
-    `import * as MO from "./morphic"\n\n${mo.join("\n\n")}`,
-    "utf-8"
-  )
 
-  const files = [ioF, moF, localioF, localmoF]
+  const files = [ioF, moF]
   execSync(`prettier --write ${files.join(" ")}`)
 }
