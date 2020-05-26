@@ -9,6 +9,7 @@
     "start": "ts-node -r tsconfig-paths/register --transpile-only bin/convert.ts"
   },
   "dependencies": {
+    "inflected": "^2.0.4",
     "ts-node": "^8.10.1",
     "typescript": "^3.9.3"
   },
