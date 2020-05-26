@@ -5,6 +5,8 @@ Careful, code is a prototype. May cause serious harm to eyes, including but not 
 
 ## HOW TO USE
 
+**Currently writes files to the specified path + .IO.ts and .MO.ts**
+
 ### Initial Setup
 
 - `yarn`
