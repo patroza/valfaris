@@ -320,6 +320,21 @@ export const doIt = (
     if (ts.isTypeAliasDeclaration(node)) {
       return processType(node)
     }
+
+    if (ts.isEnumDeclaration(node)) {
+      // TODO: only supports as string literal atm
+      //console.log("Mmm", JSON.stringify(node, undefined, 2))
+      const name = node.name.escapedText
+      definitions.push({
+        name,
+        type: "enum",
+        values: node.members.map((x) => ({
+          name: x.name.escapedText,
+          value: x.initializer.text,
+        })),
+      })
+    }
+
     return null
   }
 
@@ -433,6 +448,12 @@ export const doIt = (
         ] = `export const ${x.name} = ${x.alias}\nexport type ${x.name} = ${x.alias}`
       } else if (x.type === "union") {
         mo[x.name] = `export const ${x.name} = MO.summon((F) => ${makeType(x.union)})`
+      } else if (x.type === "enum") {
+        mo[x.name] = `export const ${
+          x.name
+        } = MO.summon((F) => F.keysOf({ ${x.values
+          .map((x) => `${x.name}: null`)
+          .join(", ")} }))`
       } else {
         const shouldIntersect = !cfg.mergeHeritage && x.heritage?.length
         const members = getMembers(cfg.mergeHeritage, x, used)
@@ -560,6 +581,10 @@ export const doIt = (
         ] = `export const ${x.name} = ${x.alias}\nexport type ${x.name} = ${x.alias}`
       } else if (x.type === "union") {
         mo[x.name] = `export const ${x.name} = ${makeType(x.union)}`
+      } else if (x.type === "enum") {
+        mo[x.name] = `export const ${x.name} = I.keyof({ ${x.values
+          .map((x) => `${x.name}: null`)
+          .join(", ")} })`
       } else {
         const shouldIntersect = !cfg.mergeHeritage && x.heritage?.length
         const members = getMembers(cfg.mergeHeritage, x, used)
