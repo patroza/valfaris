@@ -94,7 +94,10 @@ export const doIt = (
       return parseTypeLiteral(m)
     }
     if (ts.isTypeReferenceNode(m.type)) {
-      if (m.type.typeName.escapedText === "Array") {
+      if (
+        m.type.typeName.escapedText === "Array" ||
+        m.type.typeName.escapedText === "ReadonlyArray"
+      ) {
         const firstTypeArg = m.type.typeArguments[0]
         const name = m.name.escapedText
         return {
@@ -114,8 +117,29 @@ export const doIt = (
           //     },
         }
       }
-      //   console.log(ts.SyntaxKind[m.type.kind], m)
+      console.log(ts.SyntaxKind[m.type.kind], m)
       //   throw new Error("not working")
+      // Hardcode for GraphQL Codegen Maybe.
+      if (m.type.typeName && m.type.typeName.escapedText === "Maybe") {
+        const v = {
+          name: m.name.escapedText,
+          type: "TypeReference",
+          external: true,
+          //reference: m.type.qualifier.escapedText,
+          typeArguments: m.type.typeArguments
+            ? pipe(m.type.typeArguments, A.map(makeElementType))
+            : [],
+        }
+        return {
+          ...v,
+          interpretation: {
+            name: v.name,
+            type: "UnionType",
+            types: [v.typeArguments[0], { type: "NullKeyword" }],
+          },
+        }
+      }
+
       return {
         name: m.name.escapedText,
         type: ts.SyntaxKind[m.type.kind],
@@ -205,7 +229,30 @@ export const doIt = (
       }
     }
 
-    console.log("unknown", ts.SyntaxKind[m.type.kind], m)
+    if (ts.isIndexedAccessTypeNode(m.type)) {
+      const indexType = m.type.indexType.literal.text
+      const map = {
+        String: "StringKeyword",
+        ID: "StringKeyword",
+        Boolean: "BooleanKeyword",
+        Int: "NumberKeyword",
+        Float: "NumberKeyword",
+        Date: "StringKeyword",
+        DateTime: "StringKeyword", // "Date",
+        JSON: "AnyKeyword", // unknown
+        Time: "StringKeyword",
+      }
+      const mapped = map[indexType]
+      if (mapped) {
+        //return parseMember({ name: m.name, type: mapped })
+        return {
+          name: m.name.escapedText,
+          type: mapped,
+        }
+      }
+    }
+
+    console.log("unknown", ts.SyntaxKind[m.type.kind], JSON.stringify(m, undefined, 2))
     throw new Error("y")
 
     // }
@@ -258,7 +305,7 @@ export const doIt = (
     } else {
       definitions.push({
         name,
-        members: node.type.members
+        members: (node.type.members || [])
           .map(parseMember)
           .filter(Boolean)
           .filter(filterFields),
