@@ -6,6 +6,8 @@ import ts, { SyntaxKind } from "typescript"
 
 import { Ord, pipe, A, O } from "@/framework"
 
+import sort from "./sort"
+
 const config = {
   morphic: {
     //mergeHeritage: true,
@@ -350,6 +352,10 @@ export const doIt = (
     const mo = {}
     const mapping = {}
     const used: string[] = []
+    const edges: Array<[string, string]> = []
+    let currentName = ""
+    const recordIt = (dep: string) => edges.push([dep, currentName])
+
     const makeType = (m) => {
       const name = m.name || "Anon"
       switch (m.type) {
@@ -369,6 +375,7 @@ export const doIt = (
           const rootType = definitions.find((d) => d.name === m.reference)
           if (rootType) {
             used.push(m.reference)
+            recordIt(m.reference)
           }
           if (m.external) {
             if (m.interpretation) {
@@ -445,6 +452,7 @@ export const doIt = (
     }
 
     definitions.forEach((x) => {
+      currentName = x.name
       if (x.type === "alias") {
         mo[
           x.name
@@ -498,11 +506,13 @@ export const doIt = (
     `
       }
     })
+
+    const sortedEdges = sort(edges)
     return pipe(
       Object.keys(mo).filter(
         (x) => !typesOnly.length || typesOnly.includes(x) || used.includes(x)
       ),
-      A.sort(order(used)),
+      A.sort(order(sortedEdges)),
       A.map((x) => mo[x])
     )
   }
@@ -511,6 +521,10 @@ export const doIt = (
     const mapping = { date: "DateFromISOString" }
     const makeFullN = makeFullName({})
     const used = []
+    const edges: Array<[string, string]> = []
+    let currentName = ""
+    const recordIt = (dep: string) => edges.push([dep, currentName])
+
     const mo = {}
     const makeType = (m) => {
       const name = m.name || "Anon"
@@ -530,6 +544,7 @@ export const doIt = (
           const rootType = definitions.find((d) => d.name === m.reference)
           if (rootType) {
             used.push(m.reference)
+            recordIt(m.reference)
           }
           if (m.external) {
             if (m.interpretation) {
@@ -598,6 +613,7 @@ export const doIt = (
       return `${m.name}: ${makeType(m)},`
     }
     definitions.forEach((x) => {
+      currentName = x.name
       if (x.type === "alias") {
         mo[
           x.name
@@ -647,19 +663,20 @@ export interface ${x.name} extends I.TypeOf<typeof ${x.name}_> {}
     `
       }
     })
+    const sortedEdges = sort(edges)
     return pipe(
       Object.keys(mo).filter(
         (x) => !typesOnly.length || typesOnly.includes(x) || used.includes(x)
       ),
-      A.sort(order(used)),
+      A.sort(order(sortedEdges)),
       A.map((x) => mo[x])
     )
   }
 
-  const order = (used: string[]): Ord.Ord<string> =>
+  const order = (edges: Array<string>): Ord.Ord<string> =>
     Ord.contramap((x: string) => {
       const a = pipe(
-        used,
+        edges,
         A.findIndex((u) => u === x),
         O.getOrElse(() => 1000)
       )
