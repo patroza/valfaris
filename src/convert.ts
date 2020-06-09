@@ -70,10 +70,14 @@ export const doIt = (
     const parsedMember = parseMember2(m)
     if (m.questionToken) {
       return {
-        name: m.name!.escapedText,
-        type: "UnionType",
-        types: [parsedMember, { type: "UndefinedKeyword" }],
+        ...parsedMember,
+        optional: true,
       }
+      // return {
+      //   name: m.name!.escapedText,
+      //   type: "UnionType",
+      //   types: [parsedMember, { type: "UndefinedKeyword" }],
+      // }
     }
     return parsedMember
   }
@@ -117,7 +121,6 @@ export const doIt = (
           //     },
         }
       }
-      console.log(ts.SyntaxKind[m.type.kind], m)
       //   throw new Error("not working")
       // Hardcode for GraphQL Codegen Maybe.
       if (m.type.typeName && m.type.typeName.escapedText === "Maybe") {
@@ -457,16 +460,36 @@ export const doIt = (
       } else {
         const shouldIntersect = !cfg.mergeHeritage && x.heritage?.length
         const members = getMembers(cfg.mergeHeritage, x, used)
+
+        const optionalMembers = members.filter((x) => x.optional)
+        const requiredMembers = members.filter((x) => !x.optional)
         const type = `F.interface({
-          ${members
+          ${requiredMembers
             .map((x) => makeMember(x) + (x.inherited ? " // " + x.inherited : ""))
             .join("\n")}
       }, "${x.name}${shouldIntersect ? "Core" : ""}")`
 
+        const optionalType = optionalMembers.length
+          ? `F.partial({
+        ${optionalMembers
+          .map((x) => makeMember(x) + (x.inherited ? " // " + x.inherited : ""))
+          .join("\n")}
+    }, "${x.name}${shouldIntersect ? "CoreO" : "O"}")`
+          : null
+
+        const makeIntersection = (types) =>
+          `F.intersection([${types.join(", ")}], "${x.name}")`
+
         mo[x.name] = `const ${x.name}_ = MO.summon((F) => ${
           shouldIntersect
-            ? `F.intersection([${x.heritage.map((x) => `${x}(F)`).join(", ")}, ${type}],
-                "${x.name}")`
+            ? makeIntersection(
+                x.heritage
+                  .map((x) => `${x}(F)`)
+                  .concat([type])
+                  .concat(optionalType ? [optionalType] : [])
+              )
+            : optionalType
+            ? makeIntersection([type, optionalType])
             : type
         })
     export interface ${x.name} extends MO.AType<typeof ${x.name}_> {}
@@ -588,23 +611,40 @@ export const doIt = (
       } else {
         const shouldIntersect = !cfg.mergeHeritage && x.heritage?.length
         const members = getMembers(cfg.mergeHeritage, x, used)
+
+        const optionalMembers = members.filter((x) => x.optional)
+        const requiredMembers = members.filter((x) => !x.optional)
         const type = `I.type({
-          ${members
+          ${requiredMembers
             .map((x) => makeMember(x) + (x.inherited ? " // " + x.inherited : ""))
             .join("\n")}
       }, "${x.name}${shouldIntersect ? "Core" : ""}")`
 
-        mo[x.name] = `
-const ${x.name}_ = ${
+        const optionalType = optionalMembers.length
+          ? `I.partial({
+        ${optionalMembers
+          .map((x) => makeMember(x) + (x.inherited ? " // " + x.inherited : ""))
+          .join("\n")}
+    }, "${x.name}${shouldIntersect ? "CoreO" : "O"}")`
+          : null
+
+        const makeIntersection = (types) =>
+          `I.intersection([${types.join(", ")}], "${x.name}")`
+
+        mo[x.name] = `const ${x.name}_ = ${
           shouldIntersect
-            ? `I.intersection([${x.heritage.join(", ")} , ${type}], "${x.name}")`
+            ? makeIntersection(
+                x.heritage.concat([type]).concat(optionalType ? [optionalType] : [])
+              )
+            : optionalType
+            ? makeIntersection([type, optionalType])
             : type
         }
-export const ${x.name}: I.Type<${x.name}, typeof ${x.name}_["_O"], typeof ${
+        export const ${x.name}: I.Type<${x.name}, typeof ${x.name}_["_O"], typeof ${
           x.name
         }_["_I"]> = ${x.name}_
 export interface ${x.name} extends I.TypeOf<typeof ${x.name}_> {}
-`
+    `
       }
     })
     return pipe(
