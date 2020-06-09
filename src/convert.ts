@@ -221,7 +221,7 @@ export const doIt = (
     //     throw new Error("type op")
     //   }
     if (ts.isParenthesizedTypeNode(m.type)) {
-      return makeElementType(m.type.type)
+      return makeElementType(m.type.type, m.name.escapedText)
     }
 
     if (ts.isIntersectionTypeNode(m.type)) {
