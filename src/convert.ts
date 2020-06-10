@@ -6,17 +6,8 @@ import ts, { SyntaxKind } from "typescript"
 
 import { Ord, pipe, A, O } from "@/framework"
 
+import { config } from "./config"
 import sort from "./sort"
-
-const config = {
-  morphic: {
-    //mergeHeritage: true,
-    mergeHeritage: false,
-  },
-  io: {
-    mergeHeritage: false,
-  },
-}
 
 function makeFullName(names: Record<string, number>) {
   return (name: string) => {
@@ -347,6 +338,177 @@ export const doIt = (
 
   definitions.reverse()
 
+  const buildMMO = (cfg) => {
+    const makeFullN = makeFullName({})
+    const mo = {}
+    const mapping = {}
+    const used: string[] = []
+    const edges: Array<[string, string]> = []
+    let currentName = ""
+    const recordIt = (dep: string) => edges.push([dep, currentName])
+
+    const makeType = (m) => {
+      const name = m.name || "Anon"
+      switch (m.type) {
+        case "StringKeyword":
+          return "F.string()"
+        case "NumberKeyword":
+          return "F.number()"
+        case "ArrayType":
+          return `F.array(${makeType(m.elementType)})`
+        case "TypeLiteral": {
+          return `F.interface({${m.members
+            .map(makeMember)
+            .join("\n")}}, {name: "${makeFullN(name)}"})`
+        }
+
+        case "TypeReference":
+          const rootType = definitions.find((d) => d.name === m.reference)
+          if (rootType) {
+            if (used.includes(currentName) || typesOnly.includes(currentName)) {
+              used.push(m.reference)
+            }
+            recordIt(m.reference)
+          }
+          if (m.external) {
+            if (m.interpretation) {
+              return makeType(m.interpretation)
+            }
+            return `${m.reference}(F)`
+          }
+
+          const mref = m.reference.toLowerCase()
+          return rootType
+            ? `${m.reference}(F)` // `F.recursive(() => ${m.reference}(F), "${m.reference}")`
+            : `F.${mapping[mref] ?? mref}()`
+        case "LiteralType":
+          return `F.stringLiteral("${m.literal}")`
+
+        case "BooleanKeyword":
+          return "F.boolean()"
+
+        // undefined and null are problematic as they dont exist in morphic
+        // instead you have to use either F.nullable, or F.intersection([F.partial({ field: X })])
+        case "UndefinedKeyword":
+          return "F.undefined()"
+        case "NullKeyword":
+          return "F.null()"
+
+        case "AnyKeyword":
+          return "F.unknown()"
+
+        case "UnionType":
+          if (
+            m.types.find(
+              (x) => x.type === "UndefinedKeyword" || x.type === "NullKeyword"
+            )
+          ) {
+            const filtered = m.types.filter(
+              (x) => x.type !== "UndefinedKeyword" && x.type !== "NullKeyword"
+            )
+            if (filtered.length > 1) {
+              return `F.nullable(${makeType({ ...m, types: filtered })})`
+            } else {
+              return `F.nullable(${makeType(filtered[0])})`
+            }
+          }
+
+          const filtered = m.types.filter((x) => x.type === "LiteralType")
+          if (filtered.length === m.types.length) {
+            return `F.keysOf({ ${m.types
+              .map((x) => `${x.literal}: null`)
+              .join(", ")} })`
+          }
+
+          return `F.union([${m.types.map((x) => makeType(x))}], {name: "${makeFullN(
+            name
+          )}" })`
+
+        case "IntersectionType":
+          return `F.intersection([${m.types.map((x) =>
+            makeType(x)
+          )}], {name: "${name}" })`
+
+        case "LastTypeNode":
+          return "F.unknown() /* TODO */"
+
+        default: {
+          console.error("No idea", name, JSON.stringify(m, undefined, 2))
+          throw new Error("unhandled node")
+
+          return "F.something()"
+        }
+      }
+    }
+
+    const makeMember = (m) => {
+      return `${m.name}: ${makeType({
+        ...m,
+        name: pipe(m.name, camelize),
+      })},`
+    }
+
+    definitions.forEach((x) => {
+      currentName = x.name
+      if (x.type === "alias") {
+        mo[
+          x.name
+        ] = `export const ${x.name} = ${x.alias}\nexport type ${x.name} = ${x.alias}`
+      } else if (x.type === "union") {
+        mo[x.name] = `export const ${x.name} = MO.make((F) => ${makeType(x.union)})`
+      } else if (x.type === "enum") {
+        mo[x.name] = `export const ${x.name} = MO.make((F) => F.keysOf({ ${x.values
+          .map((x) => `${x.name}: null`)
+          .join(", ")} }))`
+      } else {
+        const shouldIntersect = !cfg.mergeHeritage && x.heritage?.length
+        const members = getMembers(cfg.mergeHeritage, x, used)
+
+        const optionalMembers = members.filter((x) => x.optional)
+        const requiredMembers = members.filter((x) => !x.optional)
+
+        const optionalType = optionalMembers.length
+          ? `{
+          ${optionalMembers
+            .map((x) => makeMember(x) + (x.inherited ? " // " + x.inherited : ""))
+            .join("\n")})`
+          : null
+
+        const t = `{
+            ${requiredMembers
+              .map((x) => makeMember(x) + (x.inherited ? " // " + x.inherited : ""))
+              .join("\n")}
+        }`
+
+        const type = `F.interface(${t}${
+          optionalType ? `, ${optionalType}` : ""
+        }, {name: "${x.name}${shouldIntersect ? "Core" : ""}"})`
+
+        const makeIntersection = (types) =>
+          `F.intersection([${types.join(", ")}], "${x.name}")`
+
+        mo[x.name] = `const ${x.name}_ = MO.make((F) => ${
+          shouldIntersect
+            ? makeIntersection(x.heritage.map((x) => `${x}(F)`).concat([type]))
+            : type
+        })
+    export interface ${x.name} extends MO.AType<typeof ${x.name}_> {}
+    export interface ${x.name}E extends MO.EType<typeof ${x.name}_> {}
+    export const ${x.name} = MO.opaque<${x.name}E, ${x.name}>()(${x.name}_)
+    `
+      }
+    })
+
+    const sortedEdges = sort(edges)
+    return pipe(
+      Object.keys(mo).filter(
+        (x) => !typesOnly.length || typesOnly.includes(x) || used.includes(x)
+      ),
+      A.sort(order(sortedEdges)),
+      A.map((x) => mo[x])
+    )
+  }
+
   const buildMO = (cfg) => {
     const makeFullN = makeFullName({})
     const mo = {}
@@ -374,7 +536,9 @@ export const doIt = (
         case "TypeReference":
           const rootType = definitions.find((d) => d.name === m.reference)
           if (rootType) {
-            used.push(m.reference)
+            if (used.includes(currentName) || typesOnly.includes(currentName)) {
+              used.push(m.reference)
+            }
             recordIt(m.reference)
           }
           if (m.external) {
@@ -543,7 +707,9 @@ export const doIt = (
         case "TypeReference":
           const rootType = definitions.find((d) => d.name === m.reference)
           if (rootType) {
-            used.push(m.reference)
+            if (used.includes(currentName) || typesOnly.includes(currentName)) {
+              used.push(m.reference)
+            }
             recordIt(m.reference)
           }
           if (m.external) {
@@ -709,6 +875,7 @@ export interface ${x.name} extends I.TypeOf<typeof ${x.name}_> {}
   }
   const mo = buildMO(config.morphic)
   const io = buildIO(config.io)
+  const mmo = buildMMO(config.mmorphic)
 
   if (false) {
     console.log(`
@@ -724,13 +891,11 @@ export interface ${x.name} extends I.TypeOf<typeof ${x.name}_> {}
 
   const ioF = script + ".IO.ts"
   const moF = script + ".MO.ts"
-  fs.writeFileSync(ioF, `import * as I from "./iots"\n\n${io.join("\n\n")}`, "utf-8")
-  fs.writeFileSync(
-    moF,
-    `import * as MO from "./morphic"\n\n${mo.join("\n\n")}`,
-    "utf-8"
-  )
+  const mmoF = script + ".MODEL.ts"
+  fs.writeFileSync(ioF, `${config.io.import}\n\n${io.join("\n\n")}`, "utf-8")
+  fs.writeFileSync(moF, `${config.morphic.import}\n\n${mo.join("\n\n")}`, "utf-8")
+  fs.writeFileSync(mmoF, `${config.mmorphic.import}\n\n${mmo.join("\n\n")}`, "utf-8")
 
-  const files = [ioF, moF]
+  const files = [ioF, moF, mmoF]
   execSync(`prettier --write ${files.join(" ")}`)
 }
