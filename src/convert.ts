@@ -471,7 +471,8 @@ export const doIt = (
           ? `{
           ${optionalMembers
             .map((x) => makeMember(x) + (x.inherited ? " // " + x.inherited : ""))
-            .join("\n")})`
+            .join("\n")}
+          }`
           : null
 
         const t = `{
@@ -480,7 +481,7 @@ export const doIt = (
               .join("\n")}
         }`
 
-        const type = `F.interface(${t}${
+        const type = `${optionalType ? "F.both" : "F.interface"}(${t}${
           optionalType ? `, ${optionalType}` : ""
         }, {name: "${x.name}${shouldIntersect ? "Core" : ""}"})`
 
